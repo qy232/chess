@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>五子棋对战</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: "微软雅黑", sans-serif;
+        }
+        body {
+            background: #f0f2f5;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px 10px;
+        }
+        h2 {
+            color: #222;
+            margin-bottom: 12px;
+            font-size: 20px;
+        }
+        /* 顶部按钮同行紧凑布局 */
+        .info-bar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 15px;
+            justify-content: center;
+        }
+        .info-bar span {
+            font-size: 14px;
+            color: #333;
+        }
+        button {
+            padding: 5px 12px;
+            border: none;
+            border-radius: 4px;
+            background: #409eff;
+            color: #fff;
+            cursor: pointer;
+            font-size: 13px;
+            transition: 0.2s;
+        }
+        button:hover {
+            background: #66b1ff;
+        }
+        .board-box {
+            border: 3px solid #8b4513;
+            background: #deb887;
+        }
+        table {
+            border-collapse: collapse;
+        }
+        td {
+            width: 32px;
+            height: 32px;
+            border: 1px solid #666;
+            text-align: center;
+            cursor: pointer;
+        }
+        .black {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: #000;
+            display: inline-block;
+        }
+        .white {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: #fff;
+            border: 1px solid #999;
+            display: inline-block;
+        }
+        /* 底部带中文编号按键 */
+        .num-key {
+            display: grid;
+            grid-template-columns: repeat(9, 42px);
+            gap: 3px;
+            margin-top: 18px;
+        }
+        .num-item {
+            width: 42px;
+            height: 42px;
+            background: #fff;
+            border: 2px solid #409eff;
+            border-radius: 5px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 20px;
+            font-weight: bold;
+            color: #222;
+        }
+        .num-item small {
+            font-size: 9px;
+            color: #666;
+            margin-top: 1px;
+        }
+    </style>
+</head>
+<body>
+    <h2>双人五子棋</h2>
+    <div class="info-bar">
+        <span>当前回合：<b id="turnText">黑棋</b></span>
+        <button id="restart">重新开局</button>
+        <button id="undo">撤销落子</button>
+        <button id="volMin">音量-</button>
+        <button id="volMax">音量+</button>
+        <button id="mute">静音</button>
+    </div>
+
+    <div class="board-box">
+        <table id="chessBoard"></table>
+    </div>
+
+    <!-- 底部1-9带汉字编号 -->
+    <div class="num-key">
+        <div class="num-item">1<small>壹</small></div>
+        <div class="num-item">2<small>贰</small></div>
+        <div class="num-item">3<small>叁</small></div>
+        <div class="num-item">4<small>肆</small></div>
+        <div class="num-item">5<small>伍</small></div>
+        <div class="num-item">6<small>陆</small></div>
+        <div class="num-item">7<small>柒</small></div>
+        <div class="num-item">8<small>捌</small></div>
+        <div class="num-item">9<small>玖</small></div>
+    </div>
+
+<script>
+// 音效系统
+let audioCtx, volume = 0.7, isMute = false;
+function initAudio(){
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+}
+// 落子音效
+function playDropSound(){
+    if(isMute) return;
+    let osc = audioCtx.createOscillator();
+    let gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = 550;
+    gain.gain.value = volume * 0.3;
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.1);
+}
+// 胜利音效
+function playWinSound(){
+    if(isMute) return;
+    let tone = [520,620,720,880];
+    tone.forEach((f,i)=>{
+        let o = audioCtx.createOscillator();
+        let g = audioCtx.createGain();
+        o.frequency.value = f;
+        g.gain.value = volume * 0.3;
+        o.connect(g);
+        g.connect(audioCtx.destination);
+        o.start(audioCtx.currentTime + i*0.15);
+        o.stop(audioCtx.currentTime + i*0.15 + 0.18);
+    })
+}
+// 按钮音效
+function playBtnSound(){
+    if(isMute) return;
+    let o = audioCtx.createOscillator();
+    let g = audioCtx.createGain();
+    o.frequency.value = 400;
+    g.gain.value = volume*0.25;
+    o.connect(g);
+    g.connect(audioCtx.destination);
+    o.start();
+    o.stop(audioCtx.currentTime+0.08);
+}
+
+// 音量控制
+document.getElementById('volMin').onclick = ()=>{
+    volume = Math.max(0, volume - 0.1);
+    playBtnSound();
+}
+document.getElementById('volMax').onclick = ()=>{
+    volume = Math.min(1, volume + 0.1);
+    playBtnSound();
+}
+document.getElementById('mute').onclick = ()=>{
+    isMute = !isMute;
+    playBtnSound();
+}
+
+// 五子棋逻辑
+const size = 15;
+let chess = [];
+let isBlack = true;
+let history = [];
+let gameOver = false;
+const board = document.getElementById('chessBoard');
+const turnText = document.getElementById('turnText');
+
+// 初始化棋盘
+function initBoard(){
+    board.innerHTML = '';
+    chess = Array(size).fill().map(()=>Array(size).fill(0));
+    history = [];
+    isBlack = true;
+    gameOver = false;
+    turnText.innerText = "黑棋";
+    for(let i=0;i<size;i++){
+        let tr = document.createElement('tr');
+        for(let j=0;j<size;j++){
+            let td = document.createElement('td');
+            td.dataset.x = i;
+            td.dataset.y = j;
+            td.onclick = ()=>putChess(i,j);
+            tr.appendChild(td);
+        }
+        board.appendChild(tr);
+    }
+}
+
+// 落子
+function putChess(x,y){
+    if(gameOver || chess[x][y] !== 0) return;
+    initAudio();
+    playDropSound();
+    chess[x][y] = isBlack ? 1 : 2;
+    history.push({x,y,val:chess[x][y]});
+    renderChess();
+    if(checkWin(x,y)){
+        gameOver = true;
+        playWinSound();
+        alert(`${isBlack ? "黑棋" : "白棋"} 获胜！`);
+        return;
+    }
+    isBlack = !isBlack;
+    turnText.innerText = isBlack ? "黑棋" : "白棋";
+}
+
+// 渲染棋子
+function renderChess(){
+    let tds = document.querySelectorAll('td');
+    tds.forEach(td=>{
+        let x = +td.dataset.x;
+        let y = +td.dataset.y;
+        if(chess[x][y] === 1){
+            td.innerHTML = '<span class="black"></span>';
+        }else if(chess[x][y] === 2){
+            td.innerHTML = '<span class="white"></span>';
+        }else{
+            td.innerHTML = '';
+        }
+    })
+}
+
+// 判断胜利
+function checkWin(x,y){
+    let dir = [[1,0],[0,1],[1,1],[1,-1]];
+    let now = chess[x][y];
+    for(let [dx,dy] of dir){
+        let cnt = 1;
+        for(let i=1;i<5;i++){
+            let nx = x+dx*i, ny = y+dy*i;
+            if(nx>=0&&nx<size&&ny>=0&&ny<size&&chess[nx][ny]===now) cnt++;
+            else break;
+        }
+        for(let i=1;i<5;i++){
+            let nx = x-dx*i, ny = y-dy*i;
+            if(nx>=0&&nx<size&&ny>=0&&ny<size&&chess[nx][ny]===now) cnt++;
+            else break;
+        }
+        if(cnt >=5) return true;
+    }
+    return false;
+}
+
+// 重新开局
+document.getElementById('restart').onclick = ()=>{
+    playBtnSound();
+    initBoard();
+}
+// 撤销
+document.getElementById('undo').onclick = ()=>{
+    playBtnSound();
+    if(history.length===0 || gameOver) return;
+    let last = history.pop();
+    chess[last.x][last.y] = 0;
+    isBlack = !isBlack;
+  <!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>五子棋对战</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: "微软雅黑", sans-serif;
+        }
+        body {
+            background: #f0f2f5;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px 10px;
+        }
+        h2 {
+            color: #222;
+            margin-bottom: 12px;
+            font-size: 20px;
+        }
+        /* 顶部按钮同行紧凑布局 */
+        .info-bar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 15px;
+            justify-content: center;
+        }
+        .info-bar span {
+            font-size: 14px;
+            color: #333;
+        }
+        button {
+            padding: 5px 12px;
+            border: none;
+            border-radius: 4px;
+            background: #409eff;
+            color: #fff;
+            cursor: pointer;
+            font-size: 13px;
+            transition: 0.2s;
+        }
+        button:hover {
+            background: #66b1ff;
+        }
+        .board-box {
+            border: 3px solid #8b4513;
+            background: #deb887;
+        }
+        table {
+            border-collapse: collapse;
+        }
+        td {
+            width: 32px;
+            height: 32px;
+            border: 1px solid #666;
+            text-align: center;
+            cursor: pointer;
+        }
+        .black {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: #000;
+            display: inline-block;
+        }
+        .white {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: #fff;
+            border: 1px solid #999;
+            display: inline-block;
+        }
+        /* 底部带中文编号按键 */
+        .num-key {
+            display: grid;
+            grid-template-columns: repeat(9, 42px);
+            gap: 3px;
+            margin-top: 18px;
+        }
+        .num-item {
+            width: 42px;
+            height: 42px;
+            background: #fff;
+            border: 2px solid #409eff;
+            border-radius: 5px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 20px;
+            font-weight: bold;
+            color: #222;
+        }
+        .num-item small {
+            font-size: 9px;
+            color: #666;
+            margin-top: 1px;
+        }
+    </style>
+</head>
+<body>
+    <h2>双人五子棋</h2>
+    <div class="info-bar">
+        <span>当前回合：<b id="turnText">黑棋</b></span>
+        <button id="restart">重新开局</button>
+        <button id="undo">撤销落子</button>
+        <button id="volMin">音量-</button>
+        <button id="volMax">音量+</button>
+        <button id="mute">静音</button>
+    </div>
+
+    <div class="board-box">
+        <table id="chessBoard"></table>
+    </div>
+
+    <!-- 底部1-9带汉字编号 -->
+    <div class="num-key">
+        <div class="num-item">1<small>壹</small></div>
+        <div class="num-item">2<small>贰</small></div>
+        <div class="num-item">3<small>叁</small></div>
+        <div class="num-item">4<small>肆</small></div>
+        <div class="num-item">5<small>伍</small></div>
+        <div class="num-item">6<small>陆</small></div>
+        <div class="num-item">7<small>柒</small></div>
+        <div class="num-item">8<small>捌</small></div>
+        <div class="num-item">9<small>玖</small></div>
+    </div>
+
+<script>
+// 音效系统
+let audioCtx, volume = 0.7, isMute = false;
+function initAudio(){
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+}
+// 落子音效
+function playDropSound(){
+    if(isMute) return;
+    let osc = audioCtx.createOscillator();
+    let gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = 550;
+    gain.gain.value = volume * 0.3;
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.1);
+}
+// 胜利音效
+function playWinSound(){
+    if(isMute) return;
+    let tone = [520,620,720,880];
+    tone.forEach((f,i)=>{
+        let o = audioCtx.createOscillator();
+        let g = audioCtx.createGain();
+        o.frequency.value = f;
+        g.gain.value = volume * 0.3;
+        o.connect(g);
+        g.connect(audioCtx.destination);
+        o.start(audioCtx.currentTime + i*0.15);
+        o.stop(audioCtx.currentTime + i*0.15 + 0.18);
+    })
+}
+// 按钮音效
+function playBtnSound(){
+    if(isMute) return;
+    let o = audioCtx.createOscillator();
+    let g = audioCtx.createGain();
+    o.frequency.value = 400;
+    g.gain.value = volume*0.25;
+    o.connect(g);
+    g.connect(audioCtx.destination);
+    o.start();
+    o.stop(audioCtx.currentTime+0.08);
+}
+
+// 音量控制
+document.getElementById('volMin').onclick = ()=>{
+    volume = Math.max(0, volume - 0.1);
+    playBtnSound();
+}
+document.getElementById('volMax').onclick = ()=>{
+    volume = Math.min(1, volume + 0.1);
+    playBtnSound();
+}
+document.getElementById('mute').onclick = ()=>{
+    isMute = !isMute;
+    playBtnSound();
+}
+
+// 五子棋逻辑
+const size = 15;
+let chess = [];
+let isBlack = true;
+let history = [];
+let gameOver = false;
+const board = document.getElementById('chessBoard');
+const turnText = document.getElementById('turnText');
+
+// 初始化棋盘
+function initBoard(){
+    board.innerHTML = '';
+    chess = Array(size).fill().map(()=>Array(size).fill(0));
+    history = [];
+    isBlack = true;
+    gameOver = false;
+    turnText.innerText = "黑棋";
+    for(let i=0;i<size;i++){
+        let tr = document.createElement('tr');
+        for(let j=0;j<size;j++){
+            let td = document.createElement('td');
+            td.dataset.x = i;
+            td.dataset.y = j;
+            td.onclick = ()=>putChess(i,j);
+            tr.appendChild(td);
+        }
+        board.appendChild(tr);
+    }
+}
+
+// 落子
+function putChess(x,y){
+    if(gameOver || chess[x][y] !== 0) return;
+    initAudio();
+    playDropSound();
+    chess[x][y] = isBlack ? 1 : 2;
+    history.push({x,y,val:chess[x][y]});
+    renderChess();
+    if(checkWin(x,y)){
+        gameOver = true;
+        playWinSound();
+        alert(`${isBlack ? "黑棋" : "白棋"} 获胜！`);
+        return;
+    }
+    isBlack = !isBlack;
+    turnText.innerText = isBlack ? "黑棋" : "白棋";
+}
+
+// 渲染棋子
+function renderChess(){
+    let tds = document.querySelectorAll('td');
+    tds.forEach(td=>{
+        let x = +td.dataset.x;
+        let y = +td.dataset.y;
+        if(chess[x][y] === 1){
+            td.innerHTML = '<span class="black"></span>';
+        }else if(chess[x][y] === 2){
+            td.innerHTML = '<span class="white"></span>';
+        }else{
+            td.innerHTML = '';
+        }
+    })
+}
+
+// 判断胜利
+function checkWin(x,y){
+    let dir = [[1,0],[0,1],[1,1],[1,-1]];
+    let now = chess[x][y];
+    for(let [dx,dy] of dir){
+        let cnt = 1;
+        for(let i=1;i<5;i++){
+            let nx = x+dx*i, ny = y+dy*i;
+            if(nx>=0&&nx<size&&ny>=0&&ny<size&&chess[nx][ny]===now) cnt++;
+            else break;
+        }
+        for(let i=1;i<5;i++){
+            let nx = x-dx*i, ny = y-dy*i;
+            if(nx>=0&&nx<size&&ny>=0&&ny<size&&chess[nx][ny]===now) cnt++;
+            else break;
+        }
+        if(cnt >=5) return true;
+    }
+    return false;
+}
+
+// 重新开局
+document.getElementById('restart').onclick = ()=>{
+    playBtnSound();
+    initBoard();
+}
+// 撤销
+document.getElementById('undo').onclick = ()=>{
+    playBtnSound();
+    if(history.length===0 || gameOver) return;
+    let last = history.pop();
+    chess[last.x][last.y] = 0;
+    isBlack = !isBlack;
+    turnText.innerText = isBlack ? "黑棋" : "白棋";
+    renderChess();
+}
+
+window.onload = initBoard;
+</script>
+</body>
+</html>
+  turnText.innerText = isBlack ? "黑棋" : "白棋";
+    renderChess();
+}
+
+window.onload = initBoard;
+</script>
+</body>
+</html>
+
